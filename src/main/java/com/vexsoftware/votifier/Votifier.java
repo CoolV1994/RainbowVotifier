@@ -22,10 +22,10 @@ import java.io.*;
 import java.security.KeyPair;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.logging.*;
-import org.bukkit.Bukkit;
-import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.plugin.java.JavaPlugin;
+
+import PluginReference.MC_Server;
 import com.vexsoftware.votifier.crypto.RSAIO;
 import com.vexsoftware.votifier.crypto.RSAKeygen;
 import com.vexsoftware.votifier.model.ListenerLoader;
@@ -37,8 +37,9 @@ import com.vexsoftware.votifier.net.VoteReceiver;
  * 
  * @author Blake Beaupain
  * @author Kramer Campbell
+ * @author Vinnie
  */
-public class Votifier extends JavaPlugin {
+public class Votifier {
 
 	/** The logger instance. */
 	private static final Logger LOG = Logger.getLogger("Votifier");
@@ -61,6 +62,9 @@ public class Votifier extends JavaPlugin {
 	/** The RSA key pair. */
 	private KeyPair keyPair;
 
+    /** The Rainbow server. */
+    private static MC_Server server;
+
 	/** Debug mode flag */
 	private boolean debug;
 
@@ -71,22 +75,23 @@ public class Votifier extends JavaPlugin {
 		LOG.setFilter(new LogFilter(logPrefix));
 	}
 
-	@Override
-	public void onEnable() {
+	public void onEnable(MC_Server argServer) {
 		Votifier.instance = this;
+        Votifier.server = argServer;
 
 		// Set the plugin version.
-		version = getDescription().getVersion();
+		version = "1.9";
 
 		// Handle configuration.
-		if (!getDataFolder().exists()) {
-			getDataFolder().mkdir();
+        File dataFolder = new File("plugins_mod" + File.separator + "RainbowVotifier");
+		if (!dataFolder.exists()) {
+            dataFolder.mkdir();
 		}
-		File config = new File(getDataFolder() + "/config.yml");
-		YamlConfiguration cfg = YamlConfiguration.loadConfiguration(config);
-		File rsaDirectory = new File(getDataFolder() + "/rsa");
+		File config = new File(dataFolder + "/config.txt");
+        Properties cfg = new Properties();
+		File rsaDirectory = new File(dataFolder + "/rsa");
 		// Replace to remove a bug with Windows paths - SmilingDevil
-		String listenerDirectory = getDataFolder().toString()
+		String listenerDirectory = dataFolder.toString()
 				.replace("\\", "/") + "/listeners";
 
 		/*
@@ -95,9 +100,7 @@ public class Votifier extends JavaPlugin {
 		 * likely will return the main server address instead of the address
 		 * assigned to the server.
 		 */
-		String hostAddr = Bukkit.getServer().getIp();
-		if (hostAddr == null || hostAddr.length() == 0)
-			hostAddr = "0.0.0.0";
+		String hostAddr = "0.0.0.0";
 
 		/*
 		 * Create configuration file if it does not exists; otherwise, load it
@@ -110,23 +113,23 @@ public class Votifier extends JavaPlugin {
 				// Initialize the configuration file.
 				config.createNewFile();
 
-				cfg.set("host", hostAddr);
-				cfg.set("port", 8192);
-				cfg.set("debug", false);
+				cfg.setProperty("host", hostAddr);
+				cfg.setProperty("port", "8192");
+				cfg.setProperty("debug", "false");
 
 				/*
 				 * Remind hosted server admins to be sure they have the right
 				 * port number.
 				 */
 				LOG.info("------------------------------------------------------------------------------");
-				LOG.info("Assigning Votifier to listen on port 8192. If you are hosting Craftbukkit on a");
+				LOG.info("Assigning Votifier to listen on port 8192. If you are hosting Rainbow on a");
 				LOG.info("shared server please check with your hosting provider to verify that this port");
 				LOG.info("is available for your use. Chances are that your hosting provider will assign");
-				LOG.info("a different port, which you need to specify in config.yml");
+				LOG.info("a different port, which you need to specify in config.txt");
 				LOG.info("------------------------------------------------------------------------------");
 
-				cfg.set("listener_folder", listenerDirectory);
-				cfg.save(config);
+				cfg.setProperty("listener_folder", listenerDirectory);
+                cfg.store(new FileOutputStream(config), "Votifier Configuration");
 			} catch (Exception ex) {
 				LOG.log(Level.SEVERE, "Error creating configuration file", ex);
 				gracefulExit();
@@ -134,8 +137,14 @@ public class Votifier extends JavaPlugin {
 			}
 		} else {
 			// Load configuration.
-			cfg = YamlConfiguration.loadConfiguration(config);
-		}
+            try {
+                cfg.load(new FileInputStream(config));
+            } catch (Exception ex) {
+                LOG.log(Level.SEVERE, "Error loading configuration file", ex);
+                gracefulExit();
+                return;
+            }
+        }
 
 		/*
 		 * Create RSA directory and keys if it does not exist; otherwise, read
@@ -158,13 +167,13 @@ public class Votifier extends JavaPlugin {
 		}
 
 		// Load the vote listeners.
-		listenerDirectory = cfg.getString("listener_folder");
+		listenerDirectory = cfg.getProperty("listener_folder", listenerDirectory);
 		listeners.addAll(ListenerLoader.load(listenerDirectory));
 
 		// Initialize the receiver.
-		String host = cfg.getString("host", hostAddr);
-		int port = cfg.getInt("port", 8192);
-		debug = cfg.getBoolean("debug", false);
+		String host = cfg.getProperty("host", hostAddr);
+		int port = Integer.parseInt(cfg.getProperty("port", "8192"));
+		debug = Boolean.parseBoolean(cfg.getProperty("debug", "false"));
 		if (debug)
 			LOG.info("DEBUG mode enabled!");
 
@@ -179,7 +188,6 @@ public class Votifier extends JavaPlugin {
 		}
 	}
 
-	@Override
 	public void onDisable() {
 		// Interrupt the vote receiver.
 		if (voteReceiver != null) {
@@ -236,6 +244,15 @@ public class Votifier extends JavaPlugin {
 	public KeyPair getKeyPair() {
 		return keyPair;
 	}
+
+    /**
+     * Gets the server.
+     *
+     * @return The server
+     */
+    public static MC_Server getServer() {
+        return server;
+    }
 
 	public boolean isDebug() {
 		return debug;
